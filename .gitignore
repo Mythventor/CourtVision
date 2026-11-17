@@ -1,0 +1,33 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Environment / secrets
+.env
+.env.*
+
+# Data, media, and model artifacts (keep large files out of git)
+data/
+outputs/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.pt
+*.pth
+*.onnx
+*.ckpt

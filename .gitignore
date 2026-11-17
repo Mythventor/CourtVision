@@ -32,8 +32,9 @@ outputs/
 *.onnx
 *.ckpt
 
-# Real rosters contain minors' names: keep them out of git
+# Real rosters and game logs contain minors' names: keep them out of git
 rosters/
 tags/
+games/
 !examples/rosters/
-!examples/tags/
+!examples/games/

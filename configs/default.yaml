@@ -28,16 +28,7 @@ jersey:
   min_votes: 3             # minimum readings before trusting a jersey number
 
 tags:
-  # Map tag-CSV columns to CourtVision fields. Update once the real header is known.
-  columns:
-    time: time
-    event: event
-    team: team
-    player: player
-  # How tag event names map to CourtVision event types
-  event_map:
-    "2PT Made": {type: shot, made: true, points: 2}
-    "2PT Miss": {type: shot, made: false, points: 2}
-    "3PT Made": {type: shot, made: true, points: 3}
-    "3PT Miss": {type: shot, made: false, points: 3}
-    "Foul": {type: foul}
+  # Tag logs use wall-clock times. Set this to the wall-clock time of the video's first
+  # frame ("2026-10-17 11:20:00") to put tags on the video timeline; leave null to
+  # measure from the first tag.
+  video_start: null

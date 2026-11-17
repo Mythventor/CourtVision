@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from datetime import datetime
 
 from .config import load_config
 from .events import EventLog
@@ -15,6 +16,14 @@ from .report import PLAYER_HEADERS, TEAM_HEADERS, player_rows, team_rows
 from .rosters import load_rosters
 from .stats import compute_stats
 from .tags import load_tags
+
+
+def video_start(config) -> datetime | None:
+    """`tags.video_start` from the config (YAML may already parse it as a datetime)."""
+    value = config.get("tags", {}).get("video_start")
+    if value is None or isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
 
 
 def analyze(video, tags_csv, team_a, team_b, config, rosters, progress):
@@ -26,7 +35,10 @@ def analyze(video, tags_csv, team_a, team_b, config, rosters, progress):
 
     if tags_csv:
         # Tags-only mode: works before the CV pipeline is done; useful for checking stats.
-        events = load_tags(tags_csv, config["tags"])
+        events = load_tags(tags_csv, rosters=rosters, video_start=video_start(config))
+        logged = {e.team for e in events}
+        if not set(teams) <= logged:
+            raise gr.Error(f"The tag log has teams {sorted(logged)}; pick those.")
         duration = max((e.t for e in events), default=0.0)
         log = EventLog(teams=teams, duration=duration, events=events, source="tags")
     elif video:
@@ -56,10 +68,11 @@ def build_app(config_path: str | None = None):
         gr.Markdown("# CourtVision\nUpload a game video and pick the two teams.")
         with gr.Row():
             video = gr.Video(label="Game video")
-            tags_csv = gr.File(label="Tag CSV (optional)", file_types=[".csv"], type="filepath")
+            tags_csv = gr.File(label="Tag log CSV (optional)", file_types=[".csv"], type="filepath")
         with gr.Row():
-            team_a = gr.Dropdown(team_names, label="Team A")
-            team_b = gr.Dropdown(team_names, label="Team B")
+            # Custom values allowed: some teams (e.g. Lakers, Suns) are not in the roster file
+            team_a = gr.Dropdown(team_names, label="Team A", allow_custom_value=True)
+            team_b = gr.Dropdown(team_names, label="Team B", allow_custom_value=True)
         run = gr.Button("Analyze", variant="primary")
         team_table = gr.Dataframe(headers=TEAM_HEADERS, label="Team stats")
         player_table = gr.Dataframe(headers=PLAYER_HEADERS, label="Player stats")

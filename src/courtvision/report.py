@@ -7,8 +7,9 @@ from pathlib import Path
 from .rosters import Roster
 from .stats import GameStats, Line
 
-PLAYER_HEADERS = ["Team", "Player", "PTS", "FGM", "FGA", "FG%", "3PM", "3PA", "REB", "FOULS"]
-TEAM_HEADERS = ["Team", "PTS", "FGM", "FGA", "FG%", "3PM", "3PA", "REB", "FOULS", "POSS%"]
+_LINE_HEADERS = ["PTS", "FGM", "FGA", "FG%", "3PM", "FTM", "REB", "AST", "STL", "BLK", "TO", "PF"]
+PLAYER_HEADERS = ["Team", "Player", *_LINE_HEADERS]
+TEAM_HEADERS = ["Team", *_LINE_HEADERS, "POSS%"]
 
 
 def _pct(value: float | None) -> str:
@@ -16,8 +17,8 @@ def _pct(value: float | None) -> str:
 
 
 def _line(line: Line) -> list:
-    return [line.points, line.fgm, line.fga, _pct(line.fg_pct), line.tpm, line.tpa,
-            line.rebounds, line.fouls]
+    return [line.points, line.fgm, line.fga, _pct(line.fg_pct), line.tpm, line.ftm,
+            line.reb, line.ast, line.stl, line.blk, line.tov, line.pf]
 
 
 def team_rows(stats: GameStats) -> list[list]:
@@ -36,11 +37,11 @@ def player_rows(
     """One row per player, sorted by team then points. `labels` maps team -> color label."""
     labels = labels or {}
     rows = []
-    for (t, number), line in stats.players.items():
+    for (t, player), line in stats.players.items():
         if team and t != team:
             continue
         roster = rosters.get(t, Roster(t))
-        rows.append([t, roster.name_for(number, labels.get(t)), *_line(line)])
+        rows.append([t, roster.name_for(player, labels.get(t)), *_line(line)])
     return sorted(rows, key=lambda r: (r[0], -r[2]))
 
 

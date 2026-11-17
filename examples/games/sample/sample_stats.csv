@@ -1,0 +1,20 @@
+Scope,Team,Period,Player,PTS,REB,AST,STL,BLK,TO,PF,SA
+Player,Eagles,Q1,Sample Player C,2,0,0,0,0,0,0,0
+Player,Eagles,Q1,Sample Player A,0,0,0,0,0,0,1,0
+Player,Hawks,Q1,Sample Player E,0,0,0,0,0,0,0,1
+Player,Hawks,Q1,Sample Player F,4,0,0,0,0,0,0,0
+Player,Hawks,Q1,Player 34,0,0,0,0,0,0,0,1
+Player,Eagles,Q2,Sample Player C,0,0,0,0,0,0,0,1
+Player,Hawks,Q2,Sample Player E,2,0,0,0,0,0,0,0
+Player,Eagles,Total,Sample Player A,0,0,0,0,0,0,1,0
+Player,Eagles,Total,Sample Player B,0,0,0,0,0,0,0,0
+Player,Eagles,Total,Sample Player C,2,0,0,0,0,0,0,1
+Player,Hawks,Total,Sample Player E,2,0,0,0,0,0,0,1
+Player,Hawks,Total,Sample Player F,4,0,0,0,0,0,0,0
+Player,Hawks,Total,Player 34,0,0,0,0,0,0,0,1
+Team,Eagles,Q1,Eagles,2,0,0,0,0,0,1,0
+Team,Hawks,Q1,Hawks,4,0,0,0,0,0,0,2
+Team,Eagles,Q2,Eagles,0,0,0,0,0,0,0,1
+Team,Hawks,Q2,Hawks,2,0,0,0,0,0,0,0
+Team,Eagles,Total,Eagles,2,0,0,0,0,0,1,1
+Team,Hawks,Total,Hawks,6,0,0,0,0,0,0,2

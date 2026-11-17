@@ -1,0 +1,43 @@
+# CourtVision default configuration.
+# Paths are relative to the working directory unless absolute.
+# On Colab, point data_dir / output_dir at Google Drive so results survive disconnects.
+
+data_dir: data
+output_dir: outputs
+roster_csv: examples/rosters/rosters.csv
+
+video:
+  frame_stride: 3          # analyze every Nth frame
+
+detection:
+  # Roboflow model id, e.g. "<workspace-or-project>/<version>". Pick one in week 1.
+  model_id: TODO
+  confidence: 0.3
+  # Class names as they appear in the chosen model
+  classes:
+    player: player
+    ball: ball
+    hoop: hoop
+    referee: referee
+
+tracking:
+  track_activation_threshold: 0.25
+  lost_track_buffer: 60
+
+jersey:
+  min_votes: 3             # minimum readings before trusting a jersey number
+
+tags:
+  # Map tag-CSV columns to CourtVision fields. Update once the real header is known.
+  columns:
+    time: time
+    event: event
+    team: team
+    player: player
+  # How tag event names map to CourtVision event types
+  event_map:
+    "2PT Made": {type: shot, made: true, points: 2}
+    "2PT Miss": {type: shot, made: false, points: 2}
+    "3PT Made": {type: shot, made: true, points: 3}
+    "3PT Miss": {type: shot, made: false, points: 3}
+    "Foul": {type: foul}

@@ -31,3 +31,9 @@ outputs/
 *.pth
 *.onnx
 *.ckpt
+
+# Real rosters contain minors' names: keep them out of git
+rosters/
+tags/
+!examples/rosters/
+!examples/tags/

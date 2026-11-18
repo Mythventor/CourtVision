@@ -12,6 +12,8 @@ from typing import Any
 
 import numpy as np
 
+ROLES = ("player", "ball", "hoop", "referee")
+
 
 @dataclass
 class FrameDetections:
@@ -19,6 +21,18 @@ class FrameDetections:
     ball: Any
     hoop: Any
     referees: Any
+
+
+def split_roles(dets, classes: dict[str, Any]) -> FrameDetections:
+    """Split one frame's sv.Detections into roles using the configured class names."""
+    names = np.asarray(dets.data.get("class_name", np.array([""] * len(dets))))
+    picked = {}
+    for role in ROLES:
+        wanted = classes.get(role) or []
+        wanted = [wanted] if isinstance(wanted, str) else wanted
+        picked[role] = dets[np.isin(names, wanted)] if len(dets) else dets
+    return FrameDetections(players=picked["player"], ball=picked["ball"],
+                           hoop=picked["hoop"], referees=picked["referee"])
 
 
 class Detector:
@@ -36,12 +50,9 @@ class Detector:
         import supervision as sv
 
         result = self.model.infer(frame, confidence=self.confidence)[0]
-        dets = sv.Detections.from_inference(result)
-        names = dets.data.get("class_name", np.array([]))
+        return split_roles(sv.Detections.from_inference(result), self.classes)
 
-        def pick(key: str) -> sv.Detections:
-            return dets[names == self.classes[key]]
-
-        return FrameDetections(
-            players=pick("player"), ball=pick("ball"), hoop=pick("hoop"), referees=pick("referee")
-        )
+    def class_names(self) -> list[str]:
+        """Class names the model can output (to check the config against)."""
+        names = getattr(self.model, "class_names", None)
+        return list(names) if names is not None else []

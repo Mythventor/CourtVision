@@ -18,12 +18,13 @@ dependencies = [
 # Computer vision pipeline (run on Colab GPU)
 cv = [
     "inference-gpu>=0.29",
-    "supervision>=0.25",
+    "supervision>=0.31",
+    "trackers>=2.7",
     "opencv-python-headless>=4.8",
     "scikit-learn>=1.3",
 ]
-# Web app
-app = ["gradio>=4.44"]
+# Web app and PDF report
+app = ["gradio>=4.44", "fpdf2>=2.7"]
 dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]

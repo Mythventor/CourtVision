@@ -146,6 +146,35 @@ def test_event_log_round_trip(tmp_path):
     assert EventLog.load(path) == log
 
 
+# --- report ----------------------------------------------------------------
+
+def test_pdf_report_and_highlights(tmp_path):
+    pytest.importorskip("fpdf")
+    from courtvision.report import highlights, write_pdf
+
+    rosters = load_rosters(ROSTERS)
+    log = EventLog(teams=["Eagles", "Hawks"], duration=0.0,
+                   events=load_tags(LOG, rosters=rosters), source="tags")
+    stats = compute_stats(log)
+    notes = highlights(stats, rosters, "Hawks")
+    assert notes[0] == "Top scorer: Sample Player F (4 pts)"
+
+    for team in (None, "Hawks"):
+        pdf = write_pdf(stats, rosters, tmp_path / f"r_{team}.pdf", team=team)
+        assert pdf.read_bytes().startswith(b"%PDF")
+
+
+def test_config_override_merges(tmp_path):
+    from courtvision.config import load_config
+
+    p = tmp_path / "c.yaml"
+    p.write_text("output_dir: /x\nrender:\n  width: 640\n", encoding="utf-8")
+    config = load_config(p)
+    assert config["output_dir"] == "/x"
+    assert config["render"]["width"] == 640
+    assert config["render"]["panel_width"] == 480  # untouched default kept
+
+
 # --- jersey numbers --------------------------------------------------------
 
 def test_jersey_voter_needs_min_votes():

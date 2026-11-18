@@ -2,55 +2,75 @@
 
 Course project for CS 496 (Sport Video), Northwestern University.
 
-CourtVision is a basketball video analytics tool for FAAM youth league games. Upload a
-game video, pick the two teams, and get team and per-player stats plus a downloadable
-report. Players are identified by jersey number and matched to team rosters; players
-not on the roster show as e.g. "Blue #23".
+CourtVision is a basketball video analytics tool for FAAM youth league games. The web
+app has two parts:
+
+- **Video tracking:** pick a quarter video (from Google Drive on Colab), track players and
+  the ball, and play it back with boxes around each player and a live 2D court panel.
+- **Stats & report:** team and per-player stats from a game's tag log, with a
+  downloadable PDF report.
+
+Players are identified by jersey number and matched to team rosters; players not on the
+roster show as e.g. "Blue #23".
 
 ## How it works
 
 ```
-video ──► detect + track (GPU) ──► team colors, jersey numbers ──► event log (JSON) ──► stats / report
-                                                                        ▲
-                                         tag CSV (optional) ────────────┘  also used as ground truth
+video ──► detect + track + court keypoints (GPU) ──► tracking cache ──► annotated video + 2D panel
+                                                          │
+                                                          └──► event log (JSON) ──► stats / report
+tag log ──────────────────────────────────────────────────────────────▲   also used as ground truth
 ```
 
-The pipeline's only output is an **event log** (possession, shot, rebound, foul events).
-Stats, the app tables and the report are all computed from it, so stat logic can change
-without re-processing video.
+Each video is processed once; the tracking cache (`tracks.json.gz`) is saved next to the
+annotated video, so playback, rendering and event detection never need the GPU pass again.
+Stats and the report are computed from an **event log**, so stat logic can change without
+re-processing video.
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
+| `src/courtvision/library.py` | Find game videos in the video folder |
 | `src/courtvision/video.py` | Read frames with a stride |
 | `src/courtvision/detection.py` | Roboflow detector (players, ball, hoop, referees) |
 | `src/courtvision/tracking.py` | ByteTrack player tracking |
+| `src/courtvision/court.py` | Court keypoints → homography, 2D court drawing |
 | `src/courtvision/teams.py` | Split tracks into two teams by jersey color |
 | `src/courtvision/jersey.py` | Jersey number reading and per-track voting |
+| `src/courtvision/pipeline.py` | Tracking pass and its saved cache |
+| `src/courtvision/render.py` | Annotated video with the 2D court panel |
+| `src/courtvision/processing.py` | Process a video once, reuse saved results |
+| `src/courtvision/preview.py` | One-frame model previews for setup |
 | `src/courtvision/possession.py` | Tracks → possession / shot / rebound events |
-| `src/courtvision/pipeline.py` | Runs the stages above |
 | `src/courtvision/events.py` | Event log format (save/load JSON) |
-| `src/courtvision/tags.py` | Parse tag CSV exports |
+| `src/courtvision/tags.py` | Parse tag logs |
+| `src/courtvision/tagcheck.py` | Check parsed tags against a game's exported stats |
 | `src/courtvision/rosters.py` | Roster CSV and name lookup |
 | `src/courtvision/stats.py` | Box-score stats from the event log |
 | `src/courtvision/report.py` | Tables and PDF report |
 | `src/courtvision/app.py` | Gradio web app |
-| `configs/default.yaml` | Model id, thresholds, tag CSV column mapping |
-| `notebooks/colab_app.ipynb` | Set up and run the app on Colab |
-| `examples/` | Fake rosters and tags for testing |
+| `configs/default.yaml` | Models, court, rendering and path settings |
+| `notebooks/colab_app.ipynb` | Set up, check the models, and run the app on Colab |
+| `examples/` | Fake rosters and a fake game for testing |
 
 ## Status
 
-- Working: rosters, tag log parsing (checked against the exported stats of all four games), event log, stats, app in **tags-only mode** (upload a tag log, no video).
-- TODO: pick a detection model (`detection.model_id`), jersey number reading, event detection
-  (`possession.py`), team-color confirmation step in the app, PDF report.
+- Working: rosters, tag log parsing (checked against the exported stats of all four games),
+  stats, PDF report, video tracking with annotated playback and the 2D court panel
+  (tested on a synthetic clip; not yet run on real footage).
+- To set up on real footage: confirm the detection model's class names, and fill in
+  `court.template` for the court keypoint model (both from the notebook previews).
+- TODO: jersey number reading, event detection from video (`possession.py`), naming
+  the two team colors in the app.
 
 ## Run on Colab
 
 Open `notebooks/colab_app.ipynb` in Colab with a T4 GPU runtime and run the cells. Add
-`ROBOFLOW_API_KEY`, `COURTVISION_PASSWORD` and (for a private repo) `GITHUB_TOKEN` as
-Colab secrets. The app prints a temporary share link protected by the password.
+`ROBOFLOW_API_KEY` and `COURTVISION_PASSWORD` as Colab secrets. The notebook creates a
+config at `MyDrive/CourtVision/config.yaml` that points at your Drive folders; it only
+needs the settings that differ from `configs/default.yaml`. The app prints a temporary
+share link protected by the password.
 
 ## Local development
 

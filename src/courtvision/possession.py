@@ -24,7 +24,34 @@ class FrameRecord:
     player_track_ids: np.ndarray      # (N,)
     ball_xyxy: np.ndarray | None      # (4,) best ball box, or None
     hoop_xyxy: np.ndarray             # (M, 4)
+    referee_xyxy: np.ndarray = field(default_factory=lambda: np.zeros((0, 4)))
+    court_H: np.ndarray | None = None  # (3, 3) image -> court feet, or None
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def to_json(self) -> dict[str, Any]:
+        def boxes(a):
+            return np.round(np.asarray(a, dtype=float), 1).tolist()
+
+        return {
+            "f": self.frame, "t": round(self.t, 3),
+            "ids": [int(i) for i in self.player_track_ids], "players": boxes(self.player_xyxy),
+            "ball": None if self.ball_xyxy is None else boxes(self.ball_xyxy),
+            "hoops": boxes(self.hoop_xyxy), "refs": boxes(self.referee_xyxy),
+            "H": None if self.court_H is None else np.asarray(self.court_H).ravel().tolist(),
+        }
+
+    @classmethod
+    def from_json(cls, d: dict[str, Any]) -> "FrameRecord":
+        def boxes(a):
+            return np.asarray(a, dtype=float).reshape(-1, 4)
+
+        return cls(
+            frame=d["f"], t=d["t"],
+            player_xyxy=boxes(d["players"]), player_track_ids=np.asarray(d["ids"], dtype=int),
+            ball_xyxy=None if d["ball"] is None else np.asarray(d["ball"], dtype=float),
+            hoop_xyxy=boxes(d["hoops"]), referee_xyxy=boxes(d["refs"]),
+            court_H=None if d["H"] is None else np.asarray(d["H"], dtype=float).reshape(3, 3),
+        )
 
 
 def detect_events(

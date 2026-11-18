@@ -1,31 +1,52 @@
 # CourtVision default configuration.
+# A config passed with --config only needs the keys it changes; it is merged over this file.
 # Paths are relative to the working directory unless absolute.
-# On Colab, point data_dir / output_dir at Google Drive so results survive disconnects.
 
 data_dir: data
-output_dir: outputs
+output_dir: outputs            # tracking caches and annotated videos (Colab: a Drive folder)
 roster_csv: examples/rosters/rosters.csv
+video_root: videos             # folder of game folders with quarter videos (Colab: Drive)
 
 video:
-  frame_stride: 3          # analyze every Nth frame
+  frame_stride: 2              # run detection on every Nth frame; the renderer interpolates
 
 detection:
-  # Roboflow model id, e.g. "<workspace-or-project>/<version>". Pick one in week 1.
-  model_id: TODO
+  # Roboflow basketball player model (from Roboflow's basketball tutorial).
+  # Unverified on FAAM footage: check it with the preview cell in the Colab notebook.
+  model_id: basketball-player-detection-3-ycjdo/4
   confidence: 0.3
-  # Class names as they appear in the chosen model
+  # Model class names for each role (a role can have several classes)
   classes:
-    player: player
-    ball: ball
-    hoop: hoop
-    referee: referee
+    player: [player, player-in-possession, player-jump-shot, player-layup-dunk, player-shot-block]
+    ball: [ball, ball-in-basket]
+    hoop: [rim]
+    referee: [referee]
+
+court:
+  # Roboflow court keypoint model, used to map players onto the 2D court panel.
+  model_id: basketball-court-detection-2/14
+  confidence: 0.3
+  keypoint_confidence: 0.5
+  every_n: 2                   # run the keypoint model on every Nth analyzed frame
+  length_ft: 94
+  width_ft: 50
+  # Court position [x_ft, y_ft] (origin at a corner, x along the length) of each keypoint
+  # the model outputs, in model order; null for keypoints to ignore. Fill this in using the
+  # keypoint preview in the Colab notebook. While empty, the 2D panel is off.
+  template: []
 
 tracking:
   track_activation_threshold: 0.25
   lost_track_buffer: 60
 
 jersey:
-  min_votes: 3             # minimum readings before trusting a jersey number
+  min_votes: 3                 # minimum readings before trusting a jersey number
+
+render:
+  width: 1280                  # width of the video part of the output
+  panel_width: 480             # width of the 2D court panel
+  ball_trail: 12               # number of past ball positions to draw
+  ball_max_gap: 5              # fill ball detection gaps up to this many analyzed frames
 
 tags:
   # Tag logs use wall-clock times. Set this to the wall-clock time of the video's first

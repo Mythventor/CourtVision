@@ -75,20 +75,36 @@ def build_app(config_path: str | None = None):
         rosters = {}
     team_names = sorted(rosters)
 
-    def library():
-        return list_videos(config["video_root"], exclude=config["output_dir"])
+    # Listing Drive folders is slow, so list once and again only on "Refresh list"
+    cache: dict[str, list[Path]] = {}
+
+    def library(refresh: bool = False):
+        if refresh or not cache:
+            cache.clear()
+            cache.update(list_videos(config["video_root"], exclude=config["output_dir"]))
+        return cache
 
     def files_in(game):
-        return [p.name for p in library().get(game, [])]
+        """(label with size, file name) pairs for the video dropdown."""
+        choices = []
+        for p in library().get(game, []):
+            try:
+                size = f" ({p.stat().st_size / 1e9:.1f} GB)"
+            except OSError:
+                size = ""
+            choices.append((p.name + size, p.name))
+        return choices
 
     with gr.Blocks(title="CourtVision") as demo:
         gr.Markdown("# CourtVision")
 
         with gr.Tab("Video tracking"):
             games = sorted(library())
+            first = files_in(games[0]) if games else []
             with gr.Row():
-                game = gr.Dropdown(games, label="Game folder", value=games[0] if games else None)
-                quarter = gr.Dropdown(files_in(games[0]) if games else [], label="Video")
+                game = gr.Dropdown(games, label="Day folder", value=games[0] if games else None)
+                quarter = gr.Dropdown(first, label="Video (quarter or full game)",
+                                      value=first[0][1] if first else None)
                 refresh = gr.Button("Refresh list", size="sm")
             if not games:
                 gr.Markdown(f"No videos found in `{config['video_root']}`. "
@@ -103,11 +119,11 @@ def build_app(config_path: str | None = None):
             summary = gr.Markdown()
 
             def on_game(g):
-                names = files_in(g)
-                return gr.Dropdown(choices=names, value=names[0] if names else None)
+                choices = files_in(g)
+                return gr.Dropdown(choices=choices, value=choices[0][1] if choices else None)
 
             def on_refresh():
-                gs = sorted(library())
+                gs = sorted(library(refresh=True))
                 return gr.Dropdown(choices=gs, value=gs[0] if gs else None)
 
             def on_process(g, q, clip_path, start, end, again, progress=gr.Progress()):

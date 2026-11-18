@@ -1,5 +1,6 @@
 """Video pipeline tests on a synthetic clip with fake models (no GPU or Roboflow needed)."""
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,7 @@ sv = pytest.importorskip("supervision")
 from courtvision.config import load_config, merge  # noqa: E402
 from courtvision.court import CourtCanvas, CourtSpec, homography_from_keypoints, to_court  # noqa: E402
 from courtvision.detection import split_roles  # noqa: E402
-from courtvision.library import list_videos  # noqa: E402
+from courtvision.library import describe_folder, list_videos  # noqa: E402
 from courtvision.pipeline import TrackingResult  # noqa: E402
 from courtvision.possession import FrameRecord  # noqa: E402
 from courtvision.processing import process_video  # noqa: E402
@@ -167,3 +168,27 @@ def test_list_videos_groups_by_folder(tmp_path):
         "Lakers vs Spurs": ["q1.mp4"],
     }
     assert list_videos(tmp_path / "missing") == {}
+
+
+def test_list_videos_follows_shortcuts(tmp_path):
+    """Drive shortcuts are symbolic links in Colab; the finder must look inside them."""
+    shared = tmp_path / "shared" / "FAAM_HOOPS_2026_2027_VIDEOS"
+    (shared / "2026-09-26").mkdir(parents=True)
+    (shared / "2026-09-26" / "game1_q1.mp4").write_bytes(b"")
+    (shared / "2026-09-26" / "game2_full.MP4").write_bytes(b"")
+    (shared / "2026-10-03").mkdir()
+    (shared / "2026-10-03" / "q1.mov").write_bytes(b"")
+    root = tmp_path / "court vision"
+    root.mkdir()
+    try:
+        os.symlink(shared, root / "FAAM_HOOPS_2026_2027_VIDEOS", target_is_directory=True)
+        os.symlink(root, shared / "loop", target_is_directory=True)  # must not recurse forever
+    except (OSError, NotImplementedError):
+        pytest.skip("creating symbolic links is not allowed here")
+
+    videos = list_videos(root)
+    assert {g: [p.name for p in ps] for g, ps in videos.items()} == {
+        "FAAM_HOOPS_2026_2027_VIDEOS/2026-09-26": ["game1_q1.mp4", "game2_full.MP4"],
+        "FAAM_HOOPS_2026_2027_VIDEOS/2026-10-03": ["q1.mov"],
+    }
+    assert any("shortcut" in line for line in describe_folder(root))

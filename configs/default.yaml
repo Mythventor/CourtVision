@@ -9,12 +9,18 @@ video_root: videos             # folder of game folders with quarter videos (Col
 
 video:
   frame_stride: 2              # run detection on every Nth frame; the renderer interpolates
+  # Convert the analyzed range to a small H.264 copy first (FAAM videos are 4K HEVC, which
+  # is very slow to decode on the CPU). auto = when ffmpeg is installed; true; false.
+  proxy: auto
+  proxy_height: 720
+  proxy_fps: 30
 
 detection:
   # Roboflow basketball player model (from Roboflow's basketball tutorial).
   # Unverified on FAAM footage: check it with the preview cell in the Colab notebook.
   model_id: basketball-player-detection-3-ycjdo/4
   confidence: 0.3
+  bottom_margin: 0.01          # drop player boxes touching the bottom edge (feet not visible)
   # Model class names for each role (a role can have several classes)
   classes:
     player: [player, player-in-possession, player-jump-shot, player-layup-dunk, player-shot-block]
@@ -28,12 +34,48 @@ court:
   confidence: 0.3
   keypoint_confidence: 0.5
   every_n: 2                   # run the keypoint model on every Nth analyzed frame
+  off_court_slack_ft: 2        # drop "players" whose feet map further than this off the court
   length_ft: 94
   width_ft: 50
-  # Court position [x_ft, y_ft] (origin at a corner, x along the length) of each keypoint
-  # the model outputs, in model order; null for keypoints to ignore. Fill this in using the
-  # keypoint preview in the Colab notebook. While empty, the 2D panel is off.
-  template: []
+  # Court position [x_ft, y_ft] (origin at a corner, x along the length, y across) of each
+  # of the model's 33 keypoints, in model order; null to ignore a keypoint. These are the
+  # NBA court vertices from Roboflow's sports package (feat/basketball_radar branch,
+  # configs/basketball.py, converted from cm), checked against FAAM footage: 9 confident
+  # keypoints fit with 0.35 ft mean error. Set to [] to turn the 2D panel off.
+  template:
+    - [0.00, 0.00]   # 0
+    - [0.00, 2.99]   # 1
+    - [0.00, 16.99]   # 2
+    - [0.00, 33.01]   # 3
+    - [0.00, 47.01]   # 4
+    - [0.00, 50.00]   # 5
+    - [5.25, 25.00]   # 6
+    - [13.91, 2.99]   # 7
+    - [13.91, 47.01]   # 8
+    - [19.00, 16.99]   # 9
+    - [19.00, 25.00]   # 10
+    - [19.00, 33.01]   # 11
+    - [27.40, 0.00]   # 12
+    - [29.00, 25.00]   # 13
+    - [27.40, 50.00]   # 14
+    - [46.98, 0.00]   # 15
+    - [46.98, 25.00]   # 16
+    - [46.98, 50.00]   # 17
+    - [66.60, 0.00]   # 18
+    - [64.99, 25.00]   # 19
+    - [66.60, 50.00]   # 20
+    - [75.00, 16.99]   # 21
+    - [75.00, 25.00]   # 22
+    - [75.00, 33.01]   # 23
+    - [80.09, 2.99]   # 24
+    - [80.09, 47.01]   # 25
+    - [88.75, 25.00]   # 26
+    - [94.00, 0.00]   # 27
+    - [94.00, 2.99]   # 28
+    - [94.00, 16.99]   # 29
+    - [94.00, 33.01]   # 30
+    - [94.00, 47.01]   # 31
+    - [94.00, 50.00]   # 32
 
 tracking:
   track_activation_threshold: 0.25

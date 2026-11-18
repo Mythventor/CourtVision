@@ -221,8 +221,9 @@ def render_video(
 
             out[:vid_h, :vid_w] = view
             out[:canvas.height, vid_w:] = panel
+            t_src = t + getattr(tracking, "offset_s", 0.0)  # time in the original video
             info = [
-                f"t = {int(t // 60)}:{t % 60:04.1f}",
+                f"t = {int(t_src // 60)}:{t_src % 60:04.1f}",
                 f"players tracked: {len(state.ids)}",
                 "2D panel: off (set court.template)" if not court_enabled
                 else ("2D panel: court mapped" if state.court_H is not None

@@ -35,8 +35,43 @@ def split_roles(dets, classes: dict[str, Any]) -> FrameDetections:
                            hoop=picked["hoop"], referees=picked["referee"])
 
 
+def prepare_gpu() -> None:
+    """Load the CUDA/cuDNN libraries ONNX Runtime needs from the installed NVIDIA packages.
+
+    Without this, onnxruntime-gpu often cannot find them on Colab and silently runs the
+    models on the CPU. Safe to call more than once; does nothing without onnxruntime-gpu.
+    """
+    try:
+        import onnxruntime as ort
+
+        if hasattr(ort, "preload_dlls"):  # onnxruntime >= 1.21
+            ort.preload_dlls()
+    except Exception:  # noqa: BLE001 - best effort; the model then reports CPU fallback
+        pass
+
+
+def gpu_status() -> str:
+    """One line describing whether the models can use the GPU."""
+    parts = []
+    try:
+        import torch
+
+        parts.append(f"torch {torch.__version__} CUDA available: {torch.cuda.is_available()}")
+    except Exception as e:  # noqa: BLE001
+        parts.append(f"torch not usable ({e.__class__.__name__})")
+    try:
+        import onnxruntime as ort
+
+        prepare_gpu()
+        parts.append(f"onnxruntime {ort.__version__} providers: {ort.get_available_providers()}")
+    except Exception as e:  # noqa: BLE001
+        parts.append(f"onnxruntime not usable ({e.__class__.__name__})")
+    return " | ".join(parts)
+
+
 class Detector:
     def __init__(self, det_config: dict[str, Any]):
+        prepare_gpu()
         from inference import get_model
 
         model_id = det_config["model_id"]

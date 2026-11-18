@@ -31,9 +31,11 @@ CACHE_VERSION = 1
 @dataclass
 class TrackingResult:
     meta: VideoMeta
-    video: str = ""
+    video: str = ""               # the file the frames were read from (maybe a 720p proxy)
     start_s: float = 0.0
     end_s: float | None = None
+    source: str = ""              # the original video
+    offset_s: float = 0.0         # time in `source` of `video`'s time 0 (proxy start)
     frames: list[FrameRecord] = field(default_factory=list)
     clusters: dict[int, int] = field(default_factory=dict)  # track id -> color cluster 0/1
     cluster_colors: np.ndarray = field(default_factory=lambda: np.zeros((2, 3)))  # Lab
@@ -46,6 +48,7 @@ class TrackingResult:
         data = {
             "version": CACHE_VERSION, "video": self.video, "meta": asdict(self.meta),
             "start_s": self.start_s, "end_s": self.end_s,
+            "source": self.source, "offset_s": self.offset_s,
             "frames": [f.to_json() for f in self.frames],
             "clusters": {str(k): v for k, v in self.clusters.items()},
             "cluster_colors": np.asarray(self.cluster_colors).tolist(),
@@ -66,6 +69,7 @@ class TrackingResult:
         return cls(
             meta=VideoMeta(**data["meta"]), video=data["video"],
             start_s=data["start_s"], end_s=data["end_s"],
+            source=data.get("source", data["video"]), offset_s=data.get("offset_s", 0.0),
             frames=[FrameRecord.from_json(f) for f in data["frames"]],
             clusters={int(k): v for k, v in data["clusters"].items()},
             cluster_colors=np.asarray(data["cluster_colors"], dtype=float),
@@ -89,7 +93,7 @@ def run_tracking(
     `detector` and `court_mapper` default to the Roboflow models from the config; tests
     pass fakes. Jersey reading is off until `jersey.read_number` is implemented.
     """
-    from .court import CourtMapper
+    from .court import CourtMapper, CourtSpec
     from .tracking import make_tracker
 
     stride = config["video"]["frame_stride"]
@@ -111,12 +115,24 @@ def run_tracking(
     started = time.time()
     H = None
 
+    court = CourtSpec.from_config(config["court"])
+    slack = config["court"].get("off_court_slack_ft", 2.0)
+    bottom_margin = config["detection"].get("bottom_margin", 0.01)
+    dropped = 0
+
     for n, (idx, t, frame) in enumerate(iter_frames(video_path, stride, start_s, end)):
         dets = detector(frame)
-        players = tracker(dets.players)
-        track_ids = players.tracker_id if players.tracker_id is not None else np.zeros(0, int)
         if n % every_n == 0:
             H = court_mapper(frame)
+        candidates = dets.players
+        if len(candidates):
+            keep = feet_visible(candidates.xyxy, frame.shape[0], bottom_margin)
+            if H is not None:
+                keep &= feet_on_court(candidates.xyxy, H, court, slack)
+            dropped += int((~keep).sum())
+            candidates = candidates[keep]
+        players = tracker(candidates)
+        track_ids = players.tracker_id if players.tracker_id is not None else np.zeros(0, int)
 
         for xyxy, track_id in zip(players.xyxy, track_ids):
             crop = torso_crop(frame, xyxy)
@@ -155,8 +171,32 @@ def run_tracking(
         if frames else 0.0,
         "ball_found": round(sum(f.ball_xyxy is not None for f in result.frames) / frames, 3)
         if frames else 0.0,
+        "off_court_dropped": dropped,
     }
     return result
+
+
+def feet_visible(xyxy: np.ndarray, frame_height: int, margin: float) -> np.ndarray:
+    """Mask of boxes that end above the bottom edge of the frame.
+
+    A box cut off by the bottom edge (e.g. a spectator's head in the foreground) has no
+    visible feet, so its court position cannot be known.
+    """
+    return xyxy[:, 3] < frame_height * (1 - margin)
+
+
+def feet_on_court(xyxy: np.ndarray, H: np.ndarray, court, slack_ft: float) -> np.ndarray:
+    """Mask of boxes whose bottom-center (the feet) maps onto the court, with some slack.
+
+    Drops false boxes on walls or the ceiling and people well off the court. People just
+    past a line (e.g. a bench right at the sideline) can still pass.
+    """
+    from .court import to_court
+
+    feet = np.column_stack([(xyxy[:, 0] + xyxy[:, 2]) / 2, xyxy[:, 3]])
+    x, y = to_court(feet, H).T
+    return ((x >= -slack_ft) & (x <= court.length + slack_ft)
+            & (y >= -slack_ft) & (y <= court.width + slack_ft))
 
 
 def build_event_log(

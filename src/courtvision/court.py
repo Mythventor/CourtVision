@@ -92,6 +92,9 @@ class CourtMapper:
 
 
 def load_keypoint_model(court_cfg: dict[str, Any]):
+    from .detection import prepare_gpu
+
+    prepare_gpu()
     from inference import get_model
 
     return get_model(model_id=court_cfg["model_id"], api_key=os.environ.get("ROBOFLOW_API_KEY"))
@@ -105,8 +108,12 @@ def detect_keypoints(model, frame: np.ndarray, confidence: float):
     kps = sv.KeyPoints.from_inference(result)
     if len(kps) == 0:
         return None, None
-    best = int(np.argmax(kps.confidence.mean(axis=1)))
-    return kps.xy[best], kps.confidence[best]
+    # supervision >= 0.29 renamed `confidence` to `keypoint_confidence`
+    conf = getattr(kps, "keypoint_confidence", None)
+    if conf is None:
+        conf = kps.confidence
+    best = int(np.argmax(conf.mean(axis=1)))
+    return kps.xy[best], conf[best]
 
 
 # --- drawing -----------------------------------------------------------------

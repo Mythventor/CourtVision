@@ -59,8 +59,11 @@ re-processing video.
 - Working: rosters, tag log parsing (checked against the exported stats of all four games),
   stats, PDF report, video tracking with annotated playback and the 2D court panel
   (tested on a synthetic clip; not yet run on real footage).
-- To set up on real footage: confirm the detection model's class names, and fill in
-  `court.template` for the court keypoint model (both from the notebook previews).
+- Checked on real FAAM footage (4K HEVC, 30 fps): the detection model finds players,
+  referees and jersey-number boxes, and the court template fits the court keypoints with
+  0.35 ft mean error. Long videos are converted to a 720p copy of the analyzed range first.
+- Known limits: people sitting right at the sideline (benches) can still be tracked as
+  players; the 2D panel uses NBA court proportions.
 - TODO: jersey number reading, event detection from video (`possession.py`), naming
   the two team colors in the app.
 

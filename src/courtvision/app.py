@@ -60,7 +60,10 @@ def summary_markdown(result) -> str:
         f"- Player tracks: {s.get('tracks')}",
         f"- Ball found in {s.get('ball_found', 0):.0%} of analyzed frames",
         f"- Court mapped in {s.get('court_mapped', 0):.0%} of analyzed frames",
+        f"- Off-court detections dropped (spectators, bench, walls): {s.get('off_court_dropped', 0)}",
     ]
+    if result.tracking.video != result.tracking.source:
+        lines.append("- Analyzed a 720p copy of the selected range (saved with the results)")
     return "\n".join(lines)
 
 

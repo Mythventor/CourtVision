@@ -67,7 +67,7 @@ H_FAKE = np.diag([94 / W, 50 / H, 1.0])
 def config(tmp_path):
     return merge(load_config(), {
         "output_dir": str(tmp_path / "outputs"),
-        "video": {"frame_stride": 2},
+        "video": {"frame_stride": 2, "proxy": False},
         "court": {"every_n": 1, "template": [[0, 0], [94, 0], [94, 50], [0, 50]]},
         "render": {"width": 320, "panel_width": 240},
     })
@@ -192,3 +192,77 @@ def test_list_videos_follows_shortcuts(tmp_path):
         "FAAM_HOOPS_2026_2027_VIDEOS/2026-10-03": ["q1.mov"],
     }
     assert any("shortcut" in line for line in describe_folder(root))
+
+
+# --- court template, off-court filter, 720p copy --------------------------------
+
+# Confident keypoints (x, y in pixels) from a real FAAM frame (Aces vs Fever, t=120 s)
+FAAM_KEYPOINTS = {0: (622, 1199), 1: (525, 1224), 6: (164, 1596), 7: (1411, 1278),
+                  9: (1440, 1528), 10: (1253, 1685), 11: (1051, 1864), 12: (2326, 1285),
+                  13: (2082, 1733)}
+
+
+def _faam_homography():
+    template = load_config()["court"]["template"]
+    xy = np.zeros((33, 2))
+    conf = np.zeros(33)
+    for i, p in FAAM_KEYPOINTS.items():
+        xy[i], conf[i] = p, 0.9
+    return homography_from_keypoints(xy, conf, template, 0.5), template
+
+
+def test_default_template_fits_real_faam_keypoints():
+    H, template = _faam_homography()
+    assert len(template) == 33
+    idx = list(FAAM_KEYPOINTS)
+    mapped = to_court(np.array([FAAM_KEYPOINTS[i] for i in idx], float), H)
+    err = np.linalg.norm(mapped - np.array([template[i] for i in idx]), axis=1)
+    assert err.mean() < 1.0 and err.max() < 1.5
+
+
+def test_off_court_and_cut_off_boxes_are_dropped():
+    from courtvision.pipeline import feet_on_court, feet_visible
+
+    H, _ = _faam_homography()
+    boxes = np.array([
+        [1200, 1300, 1300, 1600],   # player, feet near the free-throw line
+        [1380, 1950, 1700, 2150],   # spectator's head cut off by the bottom edge
+        [1030, 30, 1480, 400],      # false box on the ceiling
+        [150, 1100, 260, 1320],     # scorer's table, just past the baseline
+    ], float)
+    on_court = feet_on_court(boxes, H, CourtSpec(), load_config()["court"]["off_court_slack_ft"])
+    visible = feet_visible(boxes, 2160, 0.01)
+    np.testing.assert_array_equal(on_court & visible, [True, False, False, False])
+    assert on_court[1]              # the head alone would pass the court check...
+    assert not visible[1]           # ...the bottom-edge rule catches it
+
+
+def test_proxy_commands_prefer_gpu(monkeypatch):
+    from courtvision import proxy
+
+    monkeypatch.setattr(proxy, "_ffmpeg_lists", lambda: ("Hardware acceleration methods:\ncuda\n",
+                                                        " V....D h264_nvenc  NVIDIA NVENC\n"))
+    gpu, cpu = proxy._commands("in.mp4", "out.mp4", 60.0, 120.0, 720, 30)
+    assert "-hwaccel" in gpu and "h264_nvenc" in gpu
+    assert "-hwaccel" not in cpu and "libx264" in cpu
+    assert gpu[gpu.index("-ss") + 1] == "60.000" and gpu[gpu.index("-t") + 1] == "120.000"
+    monkeypatch.setattr(proxy, "_ffmpeg_lists", lambda: ("", ""))
+    assert len(proxy._commands("in.mp4", "out.mp4", 0, None, 720, 30)) == 1
+
+
+def test_process_video_with_720p_copy(tmp_path, config):
+    """Runs only where ffmpeg is installed (e.g. Colab)."""
+    from courtvision.proxy import ffmpeg_available
+
+    if not ffmpeg_available():
+        pytest.skip("ffmpeg not installed")
+    clip = make_clip(tmp_path / "big.mp4")
+    config = merge(config, {"video": {"proxy": True, "proxy_height": 120, "proxy_fps": 10}})
+    result = process_video(clip, config, start_s=1.0, end_s=3.0,
+                           detector=FakeDetector(), court_mapper=lambda f: H_FAKE)
+    tr = result.tracking
+    assert (result.folder / "source_720p.mp4").exists()
+    assert tr.video.endswith("source_720p.mp4") and tr.source == str(clip)
+    assert tr.offset_s == 1.0 and tr.meta.height == 120
+    assert 8 <= len(tr.frames) <= 12          # 2 s at 10 fps, every 2nd frame
+    assert TrackingResult.load(result.folder / "tracks.json.gz").offset_s == 1.0

@@ -1,5 +1,6 @@
 """Process a video once and cache the results next to each other on disk (Drive on Colab).
 
+    <output_dir>/<video name>_<start>-<end>/source_720p.mp4  720p working copy of the range
     <output_dir>/<video name>_<start>-<end>/tracks.json.gz   tracking cache
     <output_dir>/<video name>_<start>-<end>/annotated.mp4    video with overlays + 2D panel
 """
@@ -12,7 +13,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .pipeline import TrackingResult, run_tracking
+from .proxy import make_proxy, proxy_enabled
 from .render import render_video
+
+
+def _meta(video_path: str | Path):
+    try:
+        from .video import video_meta
+
+        return video_meta(video_path)
+    except Exception:  # noqa: BLE001 - only used for progress and the fps cap
+        return None
 
 Progress = Callable[[float, str], None]
 
@@ -56,10 +67,26 @@ def process_video(
     if reused:
         tracking = TrackingResult.load(tracks_path)
     else:
-        tracking = run_tracking(video_path, config, progress=stage(0.0, 0.7),
-                                start_s=start_s, end_s=end_s, **tracking_kwargs)
+        vc = config["video"]
+        if proxy_enabled(vc):
+            # Work on a 720p copy of just this range; its time 0 is start_s in the original
+            src = _meta(video_path)
+            fps = vc.get("proxy_fps", 30)
+            if src and src.fps:
+                fps = min(fps, src.fps)  # never invent frames
+            proxy = make_proxy(video_path, folder / "source_720p.mp4", start_s, end_s,
+                               height=vc.get("proxy_height", 720), fps=fps,
+                               progress=stage(0.0, 0.25), total_s=src.duration if src else None)
+            tracking = run_tracking(proxy, config, progress=stage(0.25, 0.75), **tracking_kwargs)
+            tracking.offset_s = start_s
+            tracking.start_s = start_s
+            tracking.end_s = start_s + tracking.meta.duration
+        else:
+            tracking = run_tracking(video_path, config, progress=stage(0.0, 0.75),
+                                    start_s=start_s, end_s=end_s, **tracking_kwargs)
+        tracking.source = str(video_path)
         tracking.save(tracks_path)
 
     if rerender or not reused or not video_out.exists():
-        render_video(tracking, video_out, config, progress=stage(0.7, 1.0))
+        render_video(tracking, video_out, config, progress=stage(0.75, 1.0))
     return ProcessResult(folder=folder, tracking=tracking, video=video_out, reused=reused)

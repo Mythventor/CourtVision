@@ -21,6 +21,10 @@ dependencies = [
 # make pip unable to install. tracking.py works with trackers 2.4+ and old supervision.
 cv = [
     "inference-gpu>=1.0",
+    # The models run through onnxruntime-gpu, which needs CUDA 12 libraries; Colab's own
+    # torch uses CUDA 13. These extras install the CUDA 12 libraries as packages
+    # (nvidia-*-cu12), which detection.prepare_gpu() loads at startup.
+    "onnxruntime-gpu[cuda,cudnn]>=1.21",
     "supervision>=0.26",
     "trackers>=2.4",
     "scikit-learn>=1.3",

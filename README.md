@@ -68,7 +68,7 @@ re-processing video.
 
 Open `notebooks/colab_app.ipynb` in Colab with a T4 GPU runtime and run the cells. Add
 `ROBOFLOW_API_KEY` and `COURTVISION_PASSWORD` as Colab secrets. The notebook creates a
-config at `MyDrive/CS496/courtvision/config.yaml` (the `DRIVE` folder set in the notebook) that points at your Drive folders; it only
+config at `MyDrive/CS496/court vision/config.yaml` (the `DRIVE` folder set in the notebook) that points at your Drive folders; it only
 needs the settings that differ from `configs/default.yaml`. The app prints a temporary
 share link protected by the password.
 

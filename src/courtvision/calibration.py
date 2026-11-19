@@ -262,9 +262,48 @@ class CalibrationSession:
 
         return list(landmarks(self.spec))
 
-    def next_landmark(self) -> str | None:
+    def landmark_choices(self) -> list[tuple[str, str]]:
+        """(label, name) pairs for the landmark list; numbers match the guide diagram."""
         used = {name for name, _, _ in self.points}
-        return next((n for n in self.landmark_names() if n not in used), None)
+        return [(f"{i}. {n}" + ("  (placed)" if n in used else ""), n)
+                for i, n in enumerate(self.landmark_names(), start=1)]
+
+    def guide_image_rgb(self, selected: str | None = None, width: int = 560) -> np.ndarray:
+        """Court diagram with every landmark numbered: placed ones green, selected one red."""
+        import cv2
+
+        from .court import CourtCanvas, landmarks
+
+        margin = 34
+        canvas = CourtCanvas(self.spec, width, margin=margin)
+        img = canvas.draw()
+        font, white = cv2.FONT_HERSHEY_SIMPLEX, (245, 245, 245)
+
+        def text(s, org, scale=0.5, color=white, thick=1):
+            (tw, th), base = cv2.getTextSize(s, font, scale, thick)
+            x, y = org
+            cv2.rectangle(img, (x - 2, y - th - 3), (x + tw + 2, y + base), (40, 40, 40), -1)
+            cv2.putText(img, s, org, font, scale, color, thick, cv2.LINE_AA)
+
+        text("FAR SIDELINE (across from the camera)", (margin, 22))
+        text("NEAR SIDELINE (camera side)", (margin, img.shape[0] - 10))
+        text("LEFT", (4, img.shape[0] // 2 + 5), 0.45)
+        text("RIGHT", (img.shape[1] - 48, img.shape[0] // 2 + 5), 0.45)
+
+        used = {name for name, _, _ in self.points}
+        for i, (name, (x, y)) in enumerate(landmarks(self.spec).items(), start=1):
+            px, py = canvas.px(x, y)
+            if name == selected:
+                cv2.circle(img, (px, py), 13, (0, 0, 255), 3)
+            color = (0, 200, 0) if name in used else (0, 215, 255)
+            cv2.circle(img, (px, py), 6, color, -1)
+            cv2.circle(img, (px, py), 6, (20, 20, 20), 1)
+            # nudge labels inward so numbers on the edges stay readable
+            mid_x, mid_y = img.shape[1] / 2, img.shape[0] / 2
+            dx = 9 if px <= mid_x + 2 else -9 - 9 * len(str(i))
+            dy = 5 if abs(py - mid_y) < 3 else (-8 if py > mid_y else 18)
+            text(str(i), (px + dx, py + dy), 0.45, (0, 0, 255) if name == selected else white)
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     def click(self, landmark: str, x_px: float, y_px: float) -> None:
         """Place `landmark` at a pixel of the displayed frame (replaces an earlier click)."""
@@ -295,8 +334,9 @@ class CalibrationSession:
     def status(self) -> str:
         n = len(self.points)
         if n < 4:
-            return (f"**{n} of at least 4 points.** Pick a landmark, then click exactly where "
-                    "it is on the floor. Spread the points out; don't use 4 on one line.")
+            return (f"**{n} of at least 4 points.** Choose a landmark you can see in the frame "
+                    "(use the diagram to find it), then click exactly where it is on the floor. "
+                    "Any 4-5 visible landmarks are enough; spread them out, not all on one line.")
         err = self.calibration().error_ft()
         msg = (f"**{n} points.** Check that the green court lines sit on the real court lines, "
                "then save.")

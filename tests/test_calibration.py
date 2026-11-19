@@ -168,3 +168,13 @@ def test_process_video_uses_saved_calibration(tmp_path):
     assert not second.reused                               # calibration is newer: redone
     assert second.tracking.stats["court_mapped"] > 0.9
     assert second.tracking.court_spec["length"] == 84      # high school court
+
+
+def test_landmark_choices_and_guide():
+    session = CalibrationSession("x.mp4", np.zeros((FH, FW, 3), np.uint8), 0, "high_school")
+    choices = session.landmark_choices()
+    assert len(choices) == 21 and choices[18] == ("19. Center circle: center", "Center circle: center")
+    session.click("Center circle: center", 100, 100)
+    assert session.landmark_choices()[18][0].endswith("(placed)")
+    guide = session.guide_image_rgb("Right free-throw line: far end")
+    assert guide.ndim == 3 and guide.shape[1] == 560

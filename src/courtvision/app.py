@@ -118,14 +118,19 @@ def build_app(config_path: str | None = None):
 
             with gr.Accordion("Court setup for the 2D panel (once per video)", open=False):
                 gr.Markdown(
-                    "1. Pick the court type and a frame time where the court lines are easy to "
-                    "see, then **Load frame**.\n"
-                    "2. Choose a landmark, then click exactly where it is on the floor. "
-                    "Left/Right and far/near are as seen from the camera.\n"
-                    "3. After 4+ points (spread out, not all on one line) the court is drawn in "
-                    "green. When the green lines sit on the real lines, **Save**.\n\n"
-                    "The video is then tracked with this setup; camera pans are followed "
-                    "automatically.")
+                    "1. Pick the court type and a frame time where many court lines are visible, "
+                    "then **Load frame**.\n"
+                    "2. Look at the frame and find landmarks you can **clearly see** (use the "
+                    "numbered diagram). Choose one in the list, then click exactly where it is "
+                    "on the floor. Repeat for **4-5 landmarks**, spread across the frame. You "
+                    "do not need the others; skip any that are off screen or covered by people.\n"
+                    "3. From 4 points the court is drawn in green on the frame. When the green "
+                    "lines sit on the real lines, **Save**. If they don't, a point is on the "
+                    "wrong landmark: **Undo** it or click it again.\n\n"
+                    "**Which end is Left?** Imagine standing at the camera, facing the court: "
+                    "the basket on your left is the *Left* end. The *far* sideline is the one "
+                    "across the court from the camera; the *near* sideline is on the camera's "
+                    "side (usually the scorer's table side).")
                 with gr.Row():
                     cal_t = gr.Number(60, label="Frame time (seconds into the video)", minimum=0)
                     standard = gr.Radio(
@@ -133,10 +138,17 @@ def build_app(config_path: str | None = None):
                          ("NBA (94 x 50 ft, 16 ft lane)", "nba")],
                         value=config["court"].get("standard", "high_school"), label="Court type")
                     load_frame = gr.Button("Load frame")
-                landmark = gr.Dropdown([], label="Landmark to click next")
-                cal_image = gr.Image(label="Click the landmark on the frame", type="numpy",
-                                     interactive=False)
-                cal_status = gr.Markdown()
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        landmark = gr.Dropdown([], value=None,
+                                               label="Landmark you are about to click")
+                        cal_status = gr.Markdown()
+                    with gr.Column(scale=2):
+                        gr.Markdown("**Landmark map** (numbers match the list; red ring = "
+                                    "selected, green = placed)")
+                        guide = gr.Image(type="numpy", interactive=False, show_label=False)
+                cal_image = gr.Image(label="Click the selected landmark on the frame",
+                                     type="numpy", interactive=False)
                 with gr.Row():
                     undo_btn = gr.Button("Undo last point", size="sm")
                     clear_btn = gr.Button("Start over", size="sm")
@@ -169,9 +181,15 @@ def build_app(config_path: str | None = None):
 
             # --- court setup ---------------------------------------------------
             def cal_view(session, note=""):
-                names = session.landmark_names()
+                # No landmark is pre-selected: the user picks one they can see each time
                 return (session.image_rgb(), (note + "\n\n" if note else "") + session.status(),
-                        session, gr.Dropdown(choices=names, value=session.next_landmark()))
+                        session, gr.Dropdown(choices=session.landmark_choices(), value=None),
+                        session.guide_image_rgb())
+
+            def on_landmark(session, lm):
+                if session is None:
+                    return gr.update()
+                return session.guide_image_rgb(lm)
 
             def on_load_frame(g, q, clip_path, t, std):
                 from .calibration import CalibrationSession
@@ -195,7 +213,7 @@ def build_app(config_path: str | None = None):
             def on_click(session, lm, evt: gr.SelectData):
                 session = require(session)
                 if not lm:
-                    raise gr.Error("Choose the landmark you are clicking.")
+                    raise gr.Error("First choose (in the list) which landmark you are clicking.")
                 x, y = evt.index
                 session.click(lm, x, y)
                 return cal_view(session)
@@ -217,7 +235,7 @@ def build_app(config_path: str | None = None):
 
             def on_standard(session, std):
                 if session is None:
-                    return gr.update(), gr.update(), session, gr.update()
+                    return gr.update(), gr.update(), session, gr.update(), gr.update()
                 session.standard = std   # points keep their landmark names
                 return cal_view(session)
 
@@ -230,7 +248,8 @@ def build_app(config_path: str | None = None):
                 return cal_view(session, f"Saved to `{path}`. Track the video now; it will use "
                                          "this setup (saved tracks are redone automatically).")
 
-            cal_outputs = [cal_image, cal_status, cal_state, landmark]
+            cal_outputs = [cal_image, cal_status, cal_state, landmark, guide]
+            landmark.change(on_landmark, [cal_state, landmark], guide)
             load_frame.click(on_load_frame, [game, quarter, clip, cal_t, standard], cal_outputs)
             cal_image.select(on_click, [cal_state, landmark], cal_outputs)
             undo_btn.click(on_undo, cal_state, cal_outputs)

@@ -35,11 +35,13 @@ re-processing video.
 | `src/courtvision/video.py` | Read frames with a stride |
 | `src/courtvision/detection.py` | Roboflow detector (players, ball, hoop, referees) |
 | `src/courtvision/tracking.py` | ByteTrack player tracking |
-| `src/courtvision/court.py` | Court keypoints → homography, 2D court drawing |
+| `src/courtvision/court.py` | Court types, landmarks, homographies, court drawing |
+| `src/courtvision/calibration.py` | Manual court setup and camera-pan tracking |
 | `src/courtvision/teams.py` | Split tracks into two teams by jersey color |
 | `src/courtvision/jersey.py` | Jersey number reading and per-track voting |
 | `src/courtvision/pipeline.py` | Tracking pass and its saved cache |
 | `src/courtvision/render.py` | Annotated video with the 2D court panel |
+| `src/courtvision/proxy.py` | 720p working copy of 4K videos (ffmpeg) |
 | `src/courtvision/processing.py` | Process a video once, reuse saved results |
 | `src/courtvision/preview.py` | One-frame model previews for setup |
 | `src/courtvision/possession.py` | Tracks → possession / shot / rebound events |
@@ -59,11 +61,16 @@ re-processing video.
 - Working: rosters, tag log parsing (checked against the exported stats of all four games),
   stats, PDF report, video tracking with annotated playback and the 2D court panel
   (tested on a synthetic clip; not yet run on real footage).
-- Checked on real FAAM footage (4K HEVC, 30 fps): the detection model finds players,
-  referees and jersey-number boxes, and the court template fits the court keypoints with
-  0.35 ft mean error. Long videos are converted to a 720p copy of the analyzed range first.
-- Known limits: people sitting right at the sideline (benches) can still be tracked as
-  players; the 2D panel uses NBA court proportions.
+- Checked on real FAAM footage (4K HEVC, 30 fps): the models run on Colab's GPU, and the
+  detection model finds players, referees, ball, rim and jersey-number boxes. Long videos
+  are converted to a 720p copy of the analyzed range first.
+- 2D panel: the pretrained court keypoint model maps FAAM camera angles onto the wrong
+  court features, so the panel uses a manual **Court setup** instead: click 4+ court
+  landmarks on one frame per video; camera pans are followed by matching the background
+  between frames (`calibration.py`).
+- Known limits: pan tracking can drift or lose the court on fast pans or when the view
+  differs a lot from the setup frame. People sitting right at the sideline can be tracked
+  as players (the off-court filter is off by default).
 - TODO: jersey number reading, event detection from video (`possession.py`), naming
   the two team colors in the app.
 

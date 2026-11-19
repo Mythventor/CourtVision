@@ -43,14 +43,20 @@ def preview_detections(video_path: str, t_s: float, config: dict[str, Any]):
 
 
 def preview_keypoints(video_path: str, t_s: float, config: dict[str, Any]):
-    """(RGB image with numbered keypoints, [(index, x, y, confidence)], fit error in feet).
+    """(RGB image, [(index, x, y, confidence)], fit error in feet).
+
+    The image shows the numbered keypoints and, in green, the court lines drawn back
+    into the frame from the estimated mapping. The mapping is right only if the green
+    lines sit on the real court lines.
 
     The fit error is the mean distance (ft) between the confident keypoints mapped onto
-    the court and their `court.template` positions; under ~1.5 ft means the template fits.
+    the court and their template positions. It only shows the keypoints agree with each
+    other: a model that labels every point consistently wrong also gets a small error.
     """
     import cv2
 
-    from .court import detect_keypoints, homography_from_keypoints, load_keypoint_model, to_court
+    from .court import (CourtSpec, detect_keypoints, draw_court_on_image,
+                        homography_from_keypoints, load_keypoint_model, to_court)
 
     court_cfg = config["court"]
     frame = read_frame(video_path, t_s)
@@ -70,6 +76,7 @@ def preview_keypoints(video_path: str, t_s: float, config: dict[str, Any]):
         template = court_cfg.get("template") or []
         H = homography_from_keypoints(xy, conf, template, min_conf)
         if H is not None:
+            draw_court_on_image(img, H, CourtSpec.preset("nba"), (0, 255, 0), 2 * thick)  # template is NBA
             used = [i for i in range(min(len(xy), len(template)))
                     if template[i] is not None and conf[i] >= min_conf]
             mapped = to_court(xy[used], H)

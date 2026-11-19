@@ -266,3 +266,14 @@ def test_process_video_with_720p_copy(tmp_path, config):
     assert tr.offset_s == 1.0 and tr.meta.height == 120
     assert 8 <= len(tr.frames) <= 12          # 2 s at 10 fps, every 2nd frame
     assert TrackingResult.load(result.folder / "tracks.json.gz").offset_s == 1.0
+
+
+def test_court_lines_drawn_into_image():
+    from courtvision.court import court_polylines, draw_court_on_image
+
+    assert len(court_polylines(CourtSpec())) == 13   # outline, half line, circle + 5 per side
+    img = np.zeros((H, W, 3), np.uint8)
+    draw_court_on_image(img, H_FAKE, CourtSpec(), (0, 255, 0), 1)   # court fills the frame
+    green = img[:, :, 1] > 0
+    assert green[:, W // 2 - 2: W // 2 + 3].any(axis=1).mean() > 0.9   # half-court line
+    assert green[H // 2, :].sum() > 4                                  # circles cross the middle

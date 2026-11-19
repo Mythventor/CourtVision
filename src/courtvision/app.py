@@ -59,7 +59,9 @@ def summary_markdown(result) -> str:
         f"({s.get('frames_per_second')} frames/s)",
         f"- Player tracks: {s.get('tracks')}",
         f"- Ball found in {s.get('ball_found', 0):.0%} of analyzed frames",
-        f"- Court mapped in {s.get('court_mapped', 0):.0%} of analyzed frames",
+        f"- Court mapped in {s.get('court_mapped', 0):.0%} of analyzed frames"
+        + ("" if s.get("court_mapped") else
+           " (set up the court for this video under *Court setup* to get the 2D panel)"),
         f"- Off-court detections dropped (spectators, bench, walls): {s.get('off_court_dropped', 0)}",
     ]
     if result.tracking.video != result.tracking.source:
@@ -113,6 +115,34 @@ def build_app(config_path: str | None = None):
                 gr.Markdown(f"No videos found in `{config['video_root']}`. "
                             "Set `video_root` in your config.")
             clip = gr.Video(label="...or upload a short clip instead", sources=["upload"])
+
+            with gr.Accordion("Court setup for the 2D panel (once per video)", open=False):
+                gr.Markdown(
+                    "1. Pick the court type and a frame time where the court lines are easy to "
+                    "see, then **Load frame**.\n"
+                    "2. Choose a landmark, then click exactly where it is on the floor. "
+                    "Left/Right and far/near are as seen from the camera.\n"
+                    "3. After 4+ points (spread out, not all on one line) the court is drawn in "
+                    "green. When the green lines sit on the real lines, **Save**.\n\n"
+                    "The video is then tracked with this setup; camera pans are followed "
+                    "automatically.")
+                with gr.Row():
+                    cal_t = gr.Number(60, label="Frame time (seconds into the video)", minimum=0)
+                    standard = gr.Radio(
+                        [("High school (84 x 50 ft, 12 ft lane)", "high_school"),
+                         ("NBA (94 x 50 ft, 16 ft lane)", "nba")],
+                        value=config["court"].get("standard", "high_school"), label="Court type")
+                    load_frame = gr.Button("Load frame")
+                landmark = gr.Dropdown([], label="Landmark to click next")
+                cal_image = gr.Image(label="Click the landmark on the frame", type="numpy",
+                                     interactive=False)
+                cal_status = gr.Markdown()
+                with gr.Row():
+                    undo_btn = gr.Button("Undo last point", size="sm")
+                    clear_btn = gr.Button("Start over", size="sm")
+                    save_btn = gr.Button("Save court setup", variant="primary", size="sm")
+                cal_state = gr.State(None)
+
             with gr.Row():
                 start_min = gr.Number(0, label="Start (minutes into the video)", minimum=0)
                 end_min = gr.Number(0, label="End (minutes; 0 = end of video)", minimum=0)
@@ -129,16 +159,84 @@ def build_app(config_path: str | None = None):
                 gs = sorted(library(refresh=True))
                 return gr.Dropdown(choices=gs, value=gs[0] if gs else None)
 
+            def selected_video(g, q, clip_path) -> Path:
+                if clip_path:
+                    return Path(clip_path)
+                match = [p for p in library().get(g, []) if p.name == q]
+                if not match:
+                    raise gr.Error("Pick a video (or upload a clip).")
+                return match[0]
+
+            # --- court setup ---------------------------------------------------
+            def cal_view(session, note=""):
+                names = session.landmark_names()
+                return (session.image_rgb(), (note + "\n\n" if note else "") + session.status(),
+                        session, gr.Dropdown(choices=names, value=session.next_landmark()))
+
+            def on_load_frame(g, q, clip_path, t, std):
+                from .calibration import CalibrationSession
+
+                video = selected_video(g, q, clip_path)
+                try:
+                    session, resumed = CalibrationSession.start(video, t or 0, std,
+                                                                config["output_dir"])
+                except (ValueError, OSError) as e:
+                    raise gr.Error(str(e))
+                note = (f"Loaded the saved court setup for **{video.name}** (frame at "
+                        f"{session.t:.0f} s). Click to adjust, or **Start over**."
+                        if resumed else f"Frame at {session.t:.0f} s of **{video.name}**.")
+                return cal_view(session, note)
+
+            def require(session):
+                if session is None:
+                    raise gr.Error("Load a frame first.")
+                return session
+
+            def on_click(session, lm, evt: gr.SelectData):
+                session = require(session)
+                if not lm:
+                    raise gr.Error("Choose the landmark you are clicking.")
+                x, y = evt.index
+                session.click(lm, x, y)
+                return cal_view(session)
+
+            def on_undo(session):
+                session = require(session)
+                session.undo()
+                return cal_view(session)
+
+            def on_clear(session):
+                session = require(session)
+                session.points = []
+                return cal_view(session, "Cleared. A saved setup stays until you save again.")
+
+            def on_standard(session, std):
+                if session is None:
+                    return gr.update(), gr.update(), session, gr.update()
+                session.standard = std   # points keep their landmark names
+                return cal_view(session)
+
+            def on_save(session):
+                session = require(session)
+                try:
+                    path = session.save(config["output_dir"])
+                except ValueError as e:
+                    raise gr.Error(str(e))
+                return cal_view(session, f"Saved to `{path}`. Track the video now; it will use "
+                                         "this setup (saved tracks are redone automatically).")
+
+            cal_outputs = [cal_image, cal_status, cal_state, landmark]
+            load_frame.click(on_load_frame, [game, quarter, clip, cal_t, standard], cal_outputs)
+            cal_image.select(on_click, [cal_state, landmark], cal_outputs)
+            undo_btn.click(on_undo, cal_state, cal_outputs)
+            clear_btn.click(on_clear, cal_state, cal_outputs)
+            standard.change(on_standard, [cal_state, standard], cal_outputs)
+            save_btn.click(on_save, cal_state, cal_outputs)
+
             def on_process(g, q, clip_path, start, end, again, progress=gr.Progress()):
                 from .processing import process_video
 
-                if clip_path:
-                    path = Path(clip_path)
-                else:
-                    match = [p for p in library().get(g, []) if p.name == q]
-                    if not match:
-                        raise gr.Error("Pick a video (or upload a clip).")
-                    path = match[0]
+                path = selected_video(g, q, clip_path)
                 end_s = (end or 0) * 60 or None
                 if end_s is not None and end_s <= (start or 0) * 60:
                     raise gr.Error("End must be after start.")

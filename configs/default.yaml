@@ -29,19 +29,32 @@ detection:
     referee: [referee]
 
 court:
-  # Roboflow court keypoint model, used to map players onto the 2D court panel.
+  # How the 2D panel maps the camera image onto the court:
+  #   manual - court setup in the app: click 4+ landmarks on one frame per video; camera
+  #            pans are followed by matching the background between frames (default)
+  #   model  - Roboflow court keypoint model (does not work for FAAM camera angles)
+  #   off    - no 2D panel
+  method: manual
+  standard: high_school        # high_school (84 x 50 ft) or nba (94 x 50 ft)
+  length_ft: null              # set to override the standard's court length
+  width_ft: null
+  # Pan tracking (manual method)
+  track_width: 960             # frame width used for feature matching
+  track_min_inliers: 40        # matched background points needed to trust a frame
+  track_reanchor_every: 10     # match directly to the calibration frame every N frames
+  # Drop "players" whose feet map more than off_court_slack_ft off the court. Off until the
+  # court mapping is checked for a gym; with a wrong mapping it would drop real players.
+  drop_off_court: false
+  off_court_slack_ft: 2
+  every_n: 2                   # update the court mapping every Nth analyzed frame
+  # --- method: model -------------------------------------------------------------------
   model_id: basketball-court-detection-2/14
   confidence: 0.3
   keypoint_confidence: 0.5
-  every_n: 2                   # run the keypoint model on every Nth analyzed frame
-  off_court_slack_ft: 2        # drop "players" whose feet map further than this off the court
-  length_ft: 94
-  width_ft: 50
   # Court position [x_ft, y_ft] (origin at a corner, x along the length, y across) of each
-  # of the model's 33 keypoints, in model order; null to ignore a keypoint. These are the
-  # NBA court vertices from Roboflow's sports package (feat/basketball_radar branch,
-  # configs/basketball.py, converted from cm), checked against FAAM footage: 9 confident
-  # keypoints fit with 0.35 ft mean error. Set to [] to turn the 2D panel off.
+  # of the model's 33 keypoints, in model order; NBA court vertices from Roboflow's sports
+  # package (feat/basketball_radar branch, configs/basketball.py, converted from cm). Use
+  # with standard: nba. On FAAM footage the keypoints land on the wrong court features.
   template:
     - [0.00, 0.00]   # 0
     - [0.00, 2.99]   # 1

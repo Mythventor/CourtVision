@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from .calibration import CalibratedCourtMapper, Calibration
 from .pipeline import TrackingResult, run_tracking
 from .proxy import make_proxy, proxy_enabled
 from .render import render_video
@@ -63,10 +64,25 @@ def process_video(
             return None
         return lambda p, msg: progress(lo + (hi - lo) * min(max(p, 0.0), 1.0), msg)
 
-    reused = tracks_path.exists() and not reprocess
+    # Manual court calibration for this video (if the user made one in the app)
+    calibration = reference = None
+    if "court_mapper" not in tracking_kwargs and config["court"].get("method", "manual") == "manual":
+        calibration = Calibration.load(config["output_dir"], video_path)
+        reference = Calibration.reference_image(config["output_dir"], video_path)
+        if calibration is None or reference is None or calibration.homography() is None:
+            calibration = None
+    cal_json, _ = Calibration.paths(config["output_dir"], video_path)
+    stale = (tracks_path.exists() and cal_json.exists()
+             and cal_json.stat().st_mtime > tracks_path.stat().st_mtime)  # calibrated later
+
+    reused = tracks_path.exists() and not reprocess and not stale
     if reused:
         tracking = TrackingResult.load(tracks_path)
     else:
+        if calibration is not None:
+            tracking_kwargs["court_mapper"] = CalibratedCourtMapper(calibration, reference,
+                                                                    config["court"])
+            tracking_kwargs["court_spec"] = calibration.court_spec
         vc = config["video"]
         if proxy_enabled(vc):
             # Work on a 720p copy of just this range; its time 0 is start_s in the original

@@ -159,10 +159,14 @@ def render_video(
 
     scale = rc["width"] / meta.width
     vid_w, vid_h = _even(meta.width * scale), _even(meta.height * scale)
-    canvas = CourtCanvas(CourtSpec.from_config(config["court"]), _even(rc["panel_width"]))
+    if getattr(tracking, "court_spec", None):
+        spec = CourtSpec(**tracking.court_spec)   # the court the mapping was made for
+    else:
+        spec = CourtSpec.from_config(config["court"])
+    canvas = CourtCanvas(spec, _even(rc["panel_width"]))
     court_img = canvas.draw()
     out_w, out_h = vid_w + canvas.width, _even(max(vid_h, canvas.height + 120))
-    court_enabled = sum(p is not None for p in (config["court"].get("template") or [])) >= 4
+    court_enabled = any(f.court_H is not None for f in frames)
 
     colors = {c: lab_to_bgr(lab) for c, lab in enumerate(tracking.cluster_colors)}
     team_labels = team_labels or {}
@@ -225,7 +229,7 @@ def render_video(
             info = [
                 f"t = {int(t_src // 60)}:{t_src % 60:04.1f}",
                 f"players tracked: {len(state.ids)}",
-                "2D panel: off (set court.template)" if not court_enabled
+                "2D panel: off (set up the court for this video)" if not court_enabled
                 else ("2D panel: court mapped" if state.court_H is not None
                       else "2D panel: court not found"),
             ]

@@ -40,6 +40,7 @@ class TrackingResult:
     clusters: dict[int, int] = field(default_factory=dict)  # track id -> color cluster 0/1
     cluster_colors: np.ndarray = field(default_factory=lambda: np.zeros((2, 3)))  # Lab
     numbers: dict[int, int | None] = field(default_factory=dict)  # track id -> jersey number
+    court_spec: dict[str, float] = field(default_factory=dict)  # court used for the mapping
     stats: dict[str, Any] = field(default_factory=dict)  # run time, frames, court coverage
 
     def save(self, path: str | Path) -> None:
@@ -53,6 +54,7 @@ class TrackingResult:
             "clusters": {str(k): v for k, v in self.clusters.items()},
             "cluster_colors": np.asarray(self.cluster_colors).tolist(),
             "numbers": {str(k): v for k, v in self.numbers.items()},
+            "court_spec": self.court_spec,
             "stats": self.stats,
         }
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -74,6 +76,7 @@ class TrackingResult:
             clusters={int(k): v for k, v in data["clusters"].items()},
             cluster_colors=np.asarray(data["cluster_colors"], dtype=float),
             numbers={int(k): v for k, v in data["numbers"].items()},
+            court_spec=data.get("court_spec", {}),
             stats=data.get("stats", {}),
         )
 
@@ -87,11 +90,15 @@ def run_tracking(
     end_s: float | None = None,
     detector=None,
     court_mapper=None,
+    court_spec=None,
 ) -> TrackingResult:
     """Detect and track players/ball/hoop, map the court, collect jersey colors.
 
-    `detector` and `court_mapper` default to the Roboflow models from the config; tests
-    pass fakes. Jersey reading is off until `jersey.read_number` is implemented.
+    `detector` defaults to the Roboflow model from the config. `court_mapper` maps a frame
+    to an image -> court homography (e.g. a CalibratedCourtMapper); by default it is the
+    court keypoint model when `court.method` is "model", otherwise none (no 2D panel).
+    `court_spec` is the court the mapper maps onto. Tests pass fakes. Jersey reading is
+    off until `jersey.read_number` is implemented.
     """
     from .court import CourtMapper, CourtSpec
     from .tracking import make_tracker
@@ -104,7 +111,11 @@ def run_tracking(
 
         detector = Detector(config["detection"])
     if court_mapper is None:
-        court_mapper = CourtMapper(config["court"])
+        if config["court"].get("method", "manual") == "model":
+            court_mapper = CourtMapper(config["court"])
+        else:
+            def court_mapper(frame):  # no calibration: no court mapping
+                return None
     tracker = make_tracker(config["tracking"], frame_rate=meta.fps / stride)
 
     end = min(end_s, meta.duration) if end_s else meta.duration
@@ -115,7 +126,9 @@ def run_tracking(
     started = time.time()
     H = None
 
-    court = CourtSpec.from_config(config["court"])
+    court = court_spec or CourtSpec.from_config(config["court"])
+    # Off by default: with a wrong court mapping it would drop real players
+    drop_off_court = config["court"].get("drop_off_court", False)
     slack = config["court"].get("off_court_slack_ft", 2.0)
     bottom_margin = config["detection"].get("bottom_margin", 0.01)
     dropped = 0
@@ -127,7 +140,7 @@ def run_tracking(
         candidates = dets.players
         if len(candidates):
             keep = feet_visible(candidates.xyxy, frame.shape[0], bottom_margin)
-            if H is not None:
+            if H is not None and drop_off_court:
                 keep &= feet_on_court(candidates.xyxy, H, court, slack)
             dropped += int((~keep).sum())
             candidates = candidates[keep]
@@ -160,6 +173,7 @@ def run_tracking(
 
     result.clusters, result.cluster_colors = cluster_teams(colors)
     result.numbers = jerseys.assignments()
+    result.court_spec = court.to_dict()
     elapsed = time.time() - started
     frames = len(result.frames)
     result.stats = {

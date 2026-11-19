@@ -183,3 +183,29 @@ def test_jersey_voter_needs_min_votes():
         voter.add(1, n)
     voter.add(2, 4)
     assert voter.assignments() == {1: 23, 2: None}
+
+
+def test_app_event_handlers_get_gradio_event_data(tmp_path):
+    """Gradio passes click data only for real gr.SelectData type hints, not strings.
+
+    app.py uses `from __future__ import annotations`, which turns hints into strings; the
+    court setup click then got evt=None ("Error" in the app on every click).
+    """
+    gr = pytest.importorskip("gradio")
+    import inspect
+
+    import yaml
+
+    from courtvision.app import build_app
+
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump({"video_root": str(tmp_path), "output_dir": str(tmp_path / "o")}))
+    demo = build_app(str(cfg))
+    fns = demo.fns.values() if isinstance(demo.fns, dict) else demo.fns
+    handlers = {getattr(d.fn, "__name__", ""): d.fn for d in fns}
+    assert handlers["on_click"].__annotations__["evt"] is gr.SelectData
+    for name, fn in handlers.items():
+        for param in inspect.signature(fn).parameters.values():
+            hint = fn.__annotations__.get(param.name)
+            assert not (isinstance(hint, str) and ("Data" in hint or "Request" in hint)), \
+                f"{name}.{param.name} has a string type hint Gradio will not recognize"

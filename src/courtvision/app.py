@@ -200,6 +200,11 @@ def build_app(config_path: str | None = None):
                 session.click(lm, x, y)
                 return cal_view(session)
 
+            # Gradio passes the click position only if it sees the gr.SelectData type hint.
+            # `from __future__ import annotations` (top of this file) turns hints into
+            # strings, which Gradio does not recognize, so set the real type here.
+            on_click.__annotations__["evt"] = gr.SelectData
+
             def on_undo(session):
                 session = require(session)
                 session.undo()
@@ -292,6 +297,7 @@ def main() -> None:
     Path(config["output_dir"]).mkdir(parents=True, exist_ok=True)
     build_app(args.config).queue().launch(
         share=args.share, auth=auth,
+        show_error=True,  # show the actual error message in the app, not just "Error"
         allowed_paths=[str(Path(config["output_dir"]).resolve())],  # serve annotated videos
     )
 

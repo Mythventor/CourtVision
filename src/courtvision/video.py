@@ -46,8 +46,8 @@ def iter_frames(
 
     meta = video_meta(path)
     cap = cv2.VideoCapture(str(path))
-    start = int(start_s * meta.fps)
-    end = int(end_s * meta.fps) if end_s is not None else meta.frame_count
+    start = int(round(start_s * meta.fps))
+    end = int(round(end_s * meta.fps)) if end_s is not None else meta.frame_count
     cap.set(cv2.CAP_PROP_POS_FRAMES, start)
     try:
         for idx in range(start, end):

@@ -15,15 +15,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Computer vision pipeline (run on Colab GPU)
+# Computer vision pipeline (run on Colab GPU).
+# Keep these loose: inference-gpu pins its own supervision, trackers and opencv-python
+# versions (e.g. 1.8.5 needs supervision<0.31 and trackers~=2.4), and tighter pins here
+# make pip unable to install. tracking.py works with trackers 2.4+ and old supervision.
 cv = [
-    "inference-gpu>=0.29",
-    "supervision>=0.25",
-    "opencv-python-headless>=4.8",
+    "inference-gpu>=1.0",
+    # The models run through onnxruntime-gpu, which needs CUDA 12 libraries; Colab's own
+    # torch uses CUDA 13. These extras install the CUDA 12 libraries as packages
+    # (nvidia-*-cu12), which detection.prepare_gpu() loads at startup.
+    "onnxruntime-gpu[cuda,cudnn]>=1.21",
+    "supervision>=0.26",
+    "trackers>=2.4",
     "scikit-learn>=1.3",
 ]
-# Web app
-app = ["gradio>=4.44"]
+# Web app and PDF report
+app = ["gradio>=4.44", "fpdf2>=2.7"]
 dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]

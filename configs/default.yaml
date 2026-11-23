@@ -1,43 +1,110 @@
 # CourtVision default configuration.
+# A config passed with --config only needs the keys it changes; it is merged over this file.
 # Paths are relative to the working directory unless absolute.
-# On Colab, point data_dir / output_dir at Google Drive so results survive disconnects.
 
 data_dir: data
-output_dir: outputs
+output_dir: outputs            # tracking caches and annotated videos (Colab: a Drive folder)
 roster_csv: examples/rosters/rosters.csv
+video_root: videos             # folder of game folders with quarter videos (Colab: Drive)
 
 video:
-  frame_stride: 3          # analyze every Nth frame
+  frame_stride: 2              # run detection on every Nth frame; the renderer interpolates
+  # Convert the analyzed range to a small H.264 copy first (FAAM videos are 4K HEVC, which
+  # is very slow to decode on the CPU). auto = when ffmpeg is installed; true; false.
+  proxy: auto
+  proxy_height: 720
+  proxy_fps: 30
 
 detection:
-  # Roboflow model id, e.g. "<workspace-or-project>/<version>". Pick one in week 1.
-  model_id: TODO
+  # Roboflow basketball player model (from Roboflow's basketball tutorial).
+  # Unverified on FAAM footage: check it with the preview cell in the Colab notebook.
+  model_id: basketball-player-detection-3-ycjdo/4
   confidence: 0.3
-  # Class names as they appear in the chosen model
+  bottom_margin: 0.01          # drop player boxes touching the bottom edge (feet not visible)
+  # Model class names for each role (a role can have several classes)
   classes:
-    player: player
-    ball: ball
-    hoop: hoop
-    referee: referee
+    player: [player, player-in-possession, player-jump-shot, player-layup-dunk, player-shot-block]
+    ball: [ball, ball-in-basket]
+    hoop: [rim]
+    referee: [referee]
+
+court:
+  # How the 2D panel maps the camera image onto the court:
+  #   manual - court setup in the app: click 4+ landmarks on one frame per video; camera
+  #            pans are followed by matching the background between frames (default)
+  #   model  - Roboflow court keypoint model (does not work for FAAM camera angles)
+  #   off    - no 2D panel
+  method: manual
+  standard: high_school        # high_school (84 x 50 ft) or nba (94 x 50 ft)
+  length_ft: null              # set to override the standard's court length
+  width_ft: null
+  # Pan tracking (manual method)
+  track_width: 960             # frame width used for feature matching
+  track_min_inliers: 40        # matched background points needed to trust a frame
+  track_reanchor_every: 10     # match directly to the calibration frame every N frames
+  # Drop "players" whose feet map more than off_court_slack_ft off the court. Off until the
+  # court mapping is checked for a gym; with a wrong mapping it would drop real players.
+  drop_off_court: false
+  off_court_slack_ft: 2
+  every_n: 2                   # update the court mapping every Nth analyzed frame
+  # --- method: model -------------------------------------------------------------------
+  model_id: basketball-court-detection-2/14
+  confidence: 0.3
+  keypoint_confidence: 0.5
+  # Court position [x_ft, y_ft] (origin at a corner, x along the length, y across) of each
+  # of the model's 33 keypoints, in model order; NBA court vertices from Roboflow's sports
+  # package (feat/basketball_radar branch, configs/basketball.py, converted from cm). Use
+  # with standard: nba. On FAAM footage the keypoints land on the wrong court features.
+  template:
+    - [0.00, 0.00]   # 0
+    - [0.00, 2.99]   # 1
+    - [0.00, 16.99]   # 2
+    - [0.00, 33.01]   # 3
+    - [0.00, 47.01]   # 4
+    - [0.00, 50.00]   # 5
+    - [5.25, 25.00]   # 6
+    - [13.91, 2.99]   # 7
+    - [13.91, 47.01]   # 8
+    - [19.00, 16.99]   # 9
+    - [19.00, 25.00]   # 10
+    - [19.00, 33.01]   # 11
+    - [27.40, 0.00]   # 12
+    - [29.00, 25.00]   # 13
+    - [27.40, 50.00]   # 14
+    - [46.98, 0.00]   # 15
+    - [46.98, 25.00]   # 16
+    - [46.98, 50.00]   # 17
+    - [66.60, 0.00]   # 18
+    - [64.99, 25.00]   # 19
+    - [66.60, 50.00]   # 20
+    - [75.00, 16.99]   # 21
+    - [75.00, 25.00]   # 22
+    - [75.00, 33.01]   # 23
+    - [80.09, 2.99]   # 24
+    - [80.09, 47.01]   # 25
+    - [88.75, 25.00]   # 26
+    - [94.00, 0.00]   # 27
+    - [94.00, 2.99]   # 28
+    - [94.00, 16.99]   # 29
+    - [94.00, 33.01]   # 30
+    - [94.00, 47.01]   # 31
+    - [94.00, 50.00]   # 32
 
 tracking:
   track_activation_threshold: 0.25
   lost_track_buffer: 60
 
 jersey:
-  min_votes: 3             # minimum readings before trusting a jersey number
+  min_votes: 3                 # minimum readings before trusting a jersey number
+
+render:
+  width: 1280                  # width of the video part of the output
+  panel_width: 480             # width of the 2D court panel
+  ball_trail: 12               # number of past ball positions to draw
+  ball_max_gap: 5              # fill ball detection gaps up to this many analyzed frames
 
 tags:
-  # Map tag-CSV columns to CourtVision fields. Update once the real header is known.
-  columns:
-    time: time
-    event: event
-    team: team
-    player: player
-  # How tag event names map to CourtVision event types
-  event_map:
-    "2PT Made": {type: shot, made: true, points: 2}
-    "2PT Miss": {type: shot, made: false, points: 2}
-    "3PT Made": {type: shot, made: true, points: 3}
-    "3PT Miss": {type: shot, made: false, points: 3}
-    "Foul": {type: foul}
+  # Tag logs use wall-clock times. Set this to the wall-clock time of the video's first
+  # frame ("2026-10-17 11:20:00") to put tags on the video timeline; leave null to
+  # measure from the first tag.
+  video_start: null

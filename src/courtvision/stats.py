@@ -4,8 +4,21 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Callable, Iterable
 
-from .events import EventLog
+from .events import Event, EventLog
+
+PlayerKey = tuple[str, int | str | None]  # (team, jersey number or name)
+
+# Event type -> Line attribute, for stats that are simple counts
+_COUNTS = {
+    "rebound": "reb",
+    "foul": "pf",
+    "assist": "ast",
+    "steal": "stl",
+    "block": "blk",
+    "turnover": "tov",
+}
 
 
 @dataclass
@@ -14,50 +27,64 @@ class Line:
 
     fgm: int = 0
     fga: int = 0
-    tpm: int = 0  # three-pointers made
-    tpa: int = 0
+    tpm: int = 0  # three-pointers made (missed shots in tag logs have no point value)
+    ftm: int = 0  # free throws made
     points: int = 0
-    rebounds: int = 0
-    fouls: int = 0
+    reb: int = 0
+    ast: int = 0
+    stl: int = 0
+    blk: int = 0
+    tov: int = 0
+    pf: int = 0
+
+    @property
+    def missed(self) -> int:
+        """Missed field goals (the "SA" stat in FAAM tag logs)."""
+        return self.fga - self.fgm
 
     @property
     def fg_pct(self) -> float | None:
         return self.fgm / self.fga if self.fga else None
 
-    @property
-    def tp_pct(self) -> float | None:
-        return self.tpm / self.tpa if self.tpa else None
+    def add(self, e: Event) -> None:
+        if e.type == "shot":
+            self.fga += 1
+            if e.data.get("made"):
+                points = e.data.get("points") or 2
+                self.fgm += 1
+                self.tpm += points == 3
+                self.points += points
+        elif e.type == "free_throw":
+            self.ftm += 1
+            self.points += 1
+        elif e.type in _COUNTS:
+            attr = _COUNTS[e.type]
+            setattr(self, attr, getattr(self, attr) + 1)
 
 
 @dataclass
 class GameStats:
     teams: dict[str, Line]
-    players: dict[tuple[str, int | None], Line]  # (team, jersey number) -> line
+    players: dict[PlayerKey, Line]
     possession_pct: dict[str, float]
 
 
-def compute_stats(log: EventLog) -> GameStats:
-    teams = {t: Line() for t in log.teams}
-    players: dict[tuple[str, int | None], Line] = defaultdict(Line)
+def compute_stats(
+    log: EventLog, where: Callable[[Event], bool] | None = None
+) -> GameStats:
+    """Box score from an event log. `where` filters events (e.g. one quarter)."""
+    events: Iterable[Event] = log.events
+    if where:
+        events = [e for e in events if where(e)]
 
-    for e in log.events:
-        # Possession is per team (see possession_share); it gets no player line.
-        if e.team not in teams or e.type not in ("shot", "rebound", "foul"):
+    teams = {t: Line() for t in log.teams}
+    players: dict[PlayerKey, Line] = defaultdict(Line)
+    for e in events:
+        # Possession is per team (see possession_share); it gets no box-score line.
+        if e.team not in teams or e.type == "possession":
             continue
-        for line in (teams[e.team], players[(e.team, e.player)]):
-            if e.type == "shot":
-                made = bool(e.data.get("made"))
-                three = e.data.get("points") == 3
-                line.fga += 1
-                line.fgm += made
-                line.tpa += three
-                line.tpm += made and three
-                if made:
-                    line.points += 3 if three else 2
-            elif e.type == "rebound":
-                line.rebounds += 1
-            elif e.type == "foul":
-                line.fouls += 1
+        teams[e.team].add(e)
+        players[(e.team, e.player)].add(e)
 
     return GameStats(teams=teams, players=dict(players), possession_pct=possession_share(log))
 
